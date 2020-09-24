@@ -1,12 +1,10 @@
 import numpy as np
 import gym
+import safety_gym
 import os, sys
 from arguments import get_args
 from mpi4py import MPI
-from rl_modules.ddpg_agent import ddpg_agent
 from rl_modules.gac_agent import gac_agent
-from rl_modules.sac_agent import sac_agent
-from rl_modules.td3_agent import td3_agent
 import random
 import torch
 
@@ -17,16 +15,17 @@ train the agent, the MPI part code is copy from openai baselines(https://github.
 def get_env_params(env):
     obs = env.reset()
     # close the environment
-    params = {'obs': obs['observation'].shape[0],
-            'goal': obs['desired_goal'].shape[0],
+    params = {'obs': obs.shape[0],
             'action': env.action_space.shape[0],
             'action_max': env.action_space.high[0],
             }
-    params['max_timesteps'] = env._max_episode_steps
+    # params['max_timesteps'] = env._max_episode_steps
+    params['max_timesteps'] = 1000
     return params
 
 def launch(args):
     env = gym.make(args.env_name)
+    test_env = gym.make(args.env_name)
     # set random seeds for reproduce
     env.seed(args.seed + MPI.COMM_WORLD.Get_rank())
     random.seed(args.seed + MPI.COMM_WORLD.Get_rank())
@@ -39,24 +38,15 @@ def launch(args):
     
     # create the ddpg_agent
     if args.alg == 'gac':
-        # create the ddpg agent to interact with the environment 
         print("Start GAC...")
-        gac_trainer = gac_agent(args, env, env_params)
+        gac_trainer = gac_agent(args, env, test_env, env_params)
         gac_trainer.learn()
     elif args.alg == 'sac':
-        # create the ddpg agent to interact with the environment 
-        print("Start SAC...")
-        sac_trainer = sac_agent(args, env, env_params)
-        sac_trainer.learn()
+        print("Missing SAC.")
     elif args.alg == 'td3':
-        print('Start TD3...')
-        td3_trainer = td3_agent(args, env, env_params)
-        td3_trainer.learn()
+        print('Missing TD3.')
     else:
-        # create the ddpg agent to interact with the environment 
-        print("Start DDPG...")
-        ddpg_trainer = ddpg_agent(args, env, env_params)
-        ddpg_trainer.learn()
+        print("Missing DDPG.")
 
 if __name__ == '__main__':
     # take the configuration for the HER
