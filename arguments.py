@@ -11,6 +11,7 @@ def get_args():
     parser.add_argument('--alg', type=str, default='gac', help='the algorithm name')
     parser.add_argument('--env-name', type=str, default='Safexp-PointGoal0-v0', help='the environment name')
     parser.add_argument('--n-epochs', type=int, default=50, help='the number of epochs to train the agent')
+    parser.add_argument('--n-train-rollouts', type=int, default=4, help='the number of train')
     parser.add_argument('--n-batches', type=int, default=50, help='the times to update the network')
     parser.add_argument('--save-interval', type=int, default=5, help='the interval that save the trajectory')
     parser.add_argument('--seed', type=int, default=123, help='random seed')

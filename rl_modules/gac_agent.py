@@ -101,37 +101,35 @@ class gac_agent:
                 obs, ep_rew, ep_cost, ep_len, done = self.env.reset(), 0, 0, 0, False
 
         for epoch in range(self.args.n_epochs):
-            for t in range(self.env_params['max_timesteps']):
-                with torch.no_grad():
-                    input_tensor = self._preproc_inputs(obs)
-                    action = self.actor_network(input_tensor)
-                    action = action.detach().cpu().numpy().squeeze()
-                # feed the actions into the environment
-                next_obs, reward, done, info = self.env.step(action * self.env_params['action_max'])
-                ep_rew += reward
-                ep_cost += info['cost']
-                ep_len += 1
-                self.buffer.store(obs, action, reward, info['cost'], next_obs, done)
-                obs = next_obs
+            for _ in range(self.args.n_train_rollouts):
+                for t in range(self.env_params['max_timesteps']):
+                    with torch.no_grad():
+                        input_tensor = self._preproc_inputs(obs)
+                        action = self.actor_network(input_tensor)
+                        action = action.detach().cpu().numpy().squeeze()
+                    # feed the actions into the environment
+                    next_obs, reward, done, info = self.env.step(action * self.env_params['action_max'])
+                    ep_rew += reward
+                    ep_cost += info['cost']
+                    ep_len += 1
+                    self.buffer.store(obs, action, reward, info['cost'], next_obs, done)
+                    obs = next_obs
 
-                if done or (ep_len == self.env_params['max_timesteps']) or (t % self.args.n_batches == 0):
-                    self.buffer.obs_mean = MPI.COMM_WORLD.allreduce(self.buffer.obs_mean, op=MPI.SUM)/self.mpi_size
-                    self.buffer.obs_std = MPI.COMM_WORLD.allreduce(self.buffer.obs_std, op=MPI.SUM)/self.mpi_size
+                    if done or (ep_len == self.env_params['max_timesteps']) or (t % self.args.n_batches == 0):
+                        self.buffer.obs_mean = MPI.COMM_WORLD.allreduce(self.buffer.obs_mean, op=MPI.SUM)/self.mpi_size
+                        self.buffer.obs_std = MPI.COMM_WORLD.allreduce(self.buffer.obs_std, op=MPI.SUM)/self.mpi_size
 
-                    for _ in range(self.args.n_batches):
-                        # train the network
-                        self._update_network()
-                        # soft update
-                        # self._soft_update_target_network(self.actor_target_network, self.actor_network)
-                        self._soft_update_target_network(self.critic_target_network1, self.critic_network1, self.args.polyak)
-                        self._soft_update_target_network(self.critic_target_network2, self.critic_network2, self.args.polyak)
+                        for _ in range(self.args.n_batches):
+                            # train the network
+                            self._update_network()
+                            # soft update
+                            # self._soft_update_target_network(self.actor_target_network, self.actor_network)
+                            self._soft_update_target_network(self.critic_target_network1, self.critic_network1, self.args.polyak)
+                            self._soft_update_target_network(self.critic_target_network2, self.critic_network2, self.args.polyak)
 
-                if done or (ep_len == self.env_params['max_timesteps']):
-                    global_rew = MPI.COMM_WORLD.allreduce(ep_rew, op=MPI.SUM)/self.mpi_size
-                    global_cost = MPI.COMM_WORLD.allreduce(ep_cost, op=MPI.SUM)/self.mpi_size
-                    global_len = MPI.COMM_WORLD.allreduce(ep_len, op=MPI.SUM)/self.mpi_size
-                    self.logger.store(EpReward=global_rew, EpCost=global_cost, EpLen=global_len)
-                    obs, ep_rew, ep_cost, ep_len, done = self.env.reset(), 0, 0, 0, False
+                    if done or (ep_len == self.env_params['max_timesteps']):
+                        self.logger.store(EpReward=ep_rew, EpCost=ep_cost, EpLen=ep_len)
+                        obs, ep_rew, ep_cost, ep_len, done = self.env.reset(), 0, 0, 0, False
 
             # start to do the evaluation
             self._test_policy()
@@ -140,18 +138,18 @@ class gac_agent:
             state = {'observation_mean':self.buffer.obs_mean, 'observation_std':self.buffer.obs_std}
             self.logger.save_state(state, None)
 
-            t = ((epoch+1) * self.mpi_size * self.env_params['max_timesteps'])
+            t = ((epoch+1) * self.mpi_size * self.env_params['max_timesteps']) * self.args.n_train_rollouts
 
             self.logger.log_tabular('Epoch', epoch+1)
-            self.logger.log_tabular('EpReward')
-            self.logger.log_tabular('EpCost')
-            self.logger.log_tabular('EpLen')
-            self.logger.log_tabular('TestReward')
-            self.logger.log_tabular('TestCost')
-            self.logger.log_tabular('TestLen')
-            self.logger.log_tabular('LossPi')
-            self.logger.log_tabular('LossQ')
-            self.logger.log_tabular('MMDEntropy')
+            self.logger.log_tabular('EpReward', with_min_and_max=True)
+            self.logger.log_tabular('EpCost',   with_min_and_max=True)
+            self.logger.log_tabular('EpLen',    average_only=True)
+            self.logger.log_tabular('TestReward', with_min_and_max=True)
+            self.logger.log_tabular('TestCost', with_min_and_max=True)
+            self.logger.log_tabular('TestLen',  average_only=True)
+            self.logger.log_tabular('LossPi',   average_only=True)
+            self.logger.log_tabular('LossQ',    average_only=True)
+            self.logger.log_tabular('MMDEntropy', average_only=True)
             self.logger.log_tabular('TotalEnvInteracts', t)
             self.logger.dump_tabular()
 
@@ -247,7 +245,4 @@ class gac_agent:
                 ep_rew += reward
                 ep_cost += info['cost']
                 ep_len += 1
-            global_rew = MPI.COMM_WORLD.allreduce(ep_rew, op=MPI.SUM)/self.mpi_size
-            global_cost = MPI.COMM_WORLD.allreduce(ep_cost, op=MPI.SUM)/self.mpi_size
-            global_len = MPI.COMM_WORLD.allreduce(ep_len, op=MPI.SUM)/self.mpi_size
-            self.logger.store(TestReward=global_rew, TestCost=global_cost, TestLen=global_len)
+            self.logger.store(TestReward=ep_rew, TestCost=ep_cost, TestLen=ep_len)

@@ -14,6 +14,7 @@ import torch
 import os.path as osp, time, atexit, os
 import warnings
 from mpi4py import MPI
+from mpi_utils.mpi_tools import proc_id, mpi_statistics_scalar
 
 color2num = dict(
     gray=30,
@@ -293,7 +294,7 @@ class EpochLogger(Logger):
                 self.epoch_dict[k] = []
             self.epoch_dict[k].append(v)
 
-    def log_tabular(self, key, val=None):
+    def log_tabular(self, key, val=None, with_min_and_max=False, average_only=False):
         """
         Log a value or possibly the mean/std/min/max values of a diagnostic.
 
@@ -306,15 +307,22 @@ class EpochLogger(Logger):
                 values for this key via ``store``, do *not* provide a ``val``
                 here.
 
+            with_min_and_max (bool): If true, log min and max values of the 
+                diagnostic over the epoch.
+
+            average_only (bool): If true, do not log the standard deviation
+                of the diagnostic over the epoch.
         """
         if val is not None:
             super().log_tabular(key,val)
         else:
             v = self.epoch_dict[key]
             vals = np.concatenate(v) if isinstance(v[0], np.ndarray) and len(v[0].shape)>0 else v
-            vals_mean = np.mean(vals)
-#           global_vals_sum = MPI.COMM_WORLD.allreduce(vals_mean, op=MPI.SUM)
-#           global_vals_mean = global_vals_sum / MPI.COMM_WORLD.Get_size()
-#           communication is too expensive.
-            super().log_tabular('Average'+key, vals_mean)
+            stats = mpi_statistics_scalar(vals, with_min_and_max=with_min_and_max)
+            super().log_tabular(key if average_only else 'Average' + key, stats[0])
+            if not(average_only):
+                super().log_tabular('Std'+key, stats[1])
+            if with_min_and_max:
+                super().log_tabular('Max'+key, stats[3])
+                super().log_tabular('Min'+key, stats[2])
         self.epoch_dict[key] = []
