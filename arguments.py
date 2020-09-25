@@ -21,7 +21,7 @@ def get_args():
     parser.add_argument('--noise-eps', type=float, default=0.2, help='noise eps')
     parser.add_argument('--buffer-size', type=int, default=int(1e6), help='the size of the buffer')
     parser.add_argument('--batch-size', type=int, default=256, help='the sample batch size')
-    parser.add_argument('--gamma', type=float, default=0.99, help='the discount factor')
+    parser.add_argument('--gamma', type=float, default=0.995, help='the discount factor')
     parser.add_argument('--action-l2', type=float, default=1, help='l2 reg')
     parser.add_argument('--lr-actor', type=float, default=0.001, help='the learning rate of the actor')
     parser.add_argument('--lr-critic', type=float, default=0.001, help='the learning rate of the critic')
@@ -37,8 +37,7 @@ def get_args():
     parser.add_argument('--alpha', type=float, default=0.02, help='hyperparameter of entropy in sac')
     parser.add_argument('--load-fold', type=str, default='tmp', help='load data and model from this fold')
     parser.add_argument('--render', action='store_true', help='enable env.render()')
-    parser.add_argument('--warmup_steps', type=int, default=10000, help='warm up for replay buffer')
-    parser.add_argument('--advice', type=float, default=1.0, help='hyperparameter for weighted cost value')
+    parser.add_argument('--advice', type=float, default=0.1, help='hyperparameter for weighted cost value')
 
     args = parser.parse_args()
 

@@ -97,6 +97,8 @@ class gac_agent:
 
         self.logger.setup_pytorch_saver(self.actor_network)
 
+        self.obs_mean, self.obs_std = self.buffer.obs_mean, self.buffer.obs_std
+
     def learn(self):
         """
         train the network
@@ -104,17 +106,6 @@ class gac_agent:
         """
         # start to collect samples
         obs, ep_rew, ep_cost, ep_len, done = self.env.reset(), 0, 0, 0, False
-        for t in range(self.args.warmup_steps) :
-            action = self.env.action_space.sample()
-            next_obs, reward, done, info = self.env.step(action)
-            ep_rew += reward
-            ep_cost += info['cost']
-            ep_len += 1
-            self.buffer.store(obs, action, reward, info['cost'], next_obs, done)
-            obs = next_obs
-            if done or (ep_len == self.env_params['max_timesteps']):
-                obs, ep_rew, ep_cost, ep_len, done = self.env.reset(), 0, 0, 0, False
-
         for epoch in range(self.args.n_epochs):
             for _ in range(self.args.n_train_rollouts):
                 for t in range(self.env_params['max_timesteps']):
@@ -133,6 +124,13 @@ class gac_agent:
                     if done or (ep_len == self.env_params['max_timesteps']) or (t % self.args.n_batches == 0):
                         self.buffer.obs_mean = MPI.COMM_WORLD.allreduce(self.buffer.obs_mean, op=MPI.SUM)/self.mpi_size
                         self.buffer.obs_std = MPI.COMM_WORLD.allreduce(self.buffer.obs_std, op=MPI.SUM)/self.mpi_size
+                        self.obs_mean, self.obs_std = self.buffer.obs_mean, self.buffer.obs_std
+
+                        self.buffer.rew_mean = MPI.COMM_WORLD.allreduce(self.buffer.rew_mean, op=MPI.SUM)/self.mpi_size
+                        self.buffer.rew_std = MPI.COMM_WORLD.allreduce(self.buffer.rew_std, op=MPI.SUM)/self.mpi_size
+
+                        self.buffer.cost_mean = MPI.COMM_WORLD.allreduce(self.buffer.cost_mean, op=MPI.SUM)/self.mpi_size
+                        self.buffer.cost_std = MPI.COMM_WORLD.allreduce(self.buffer.cost_std, op=MPI.SUM)/self.mpi_size
 
                         for _ in range(self.args.n_batches):
                             # train the network
@@ -168,9 +166,17 @@ class gac_agent:
             self.logger.log_tabular('TotalEnvInteracts', t)
             self.logger.dump_tabular()
 
+            if MPI.COMM_WORLD.Get_rank() == 0:
+                print("obs_mean=", self.buffer.obs_mean)
+                print("obs_std=", self.buffer.obs_std)
+                print("reward_mean=", self.buffer.rew_mean)
+                print("reward_std=", self.buffer.rew_std)
+                print("cost_mean=", self.buffer.cost_mean)
+                print("cost_std=", self.buffer.cost_std)
+
     # pre_process the inputs
     def _preproc_inputs(self, obs):
-        inputs = self.buffer.obs_encoder(obs)
+        inputs = ((np.array(obs) - self.obs_mean)/(self.obs_std + 1e-8)).clip(-self.args.clip_range, self.args.clip_range)
         inputs = torch.tensor(inputs, dtype=torch.float32).unsqueeze(0)
         if self.args.cuda:
             inputs = inputs.cuda(self.device)
