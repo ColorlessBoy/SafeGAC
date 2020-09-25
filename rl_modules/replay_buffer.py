@@ -31,7 +31,7 @@ class ReplayBuffer:
         self.obs_limit = 5.0
         self.obs_mean = np.zeros(obs_dim, dtype=np.float32)
         self.obs_square_mean = np.zeros(obs_dim, dtype=np.float32)
-        self.obs_std = np.zeros(obs_dim, dtype=np.float32)
+        self.obs_std = np.ones(obs_dim, dtype=np.float32)
 
     def store(self, obs, act, rew, cost, next_obs, done):
         self.obs_buf[self.ptr] = obs
@@ -46,7 +46,8 @@ class ReplayBuffer:
         self.total_num += 1
         self.obs_mean = self.obs_mean / self.total_num * (self.total_num - 1) + np.array(obs) / self.total_num
         self.obs_square_mean = self.obs_square_mean / self.total_num * (self.total_num - 1) + np.array(obs)**2 / self.total_num
-        self.obs_std = np.sqrt(self.obs_square_mean - self.obs_mean ** 2 + 1e-8)
+        obs_var = (self.obs_square_mean - self.obs_mean ** 2).clip(1e-4, 100)
+        self.obs_std = np.sqrt(obs_var)
 
     def sample(self, batch_size=32):
         idxs = np.random.randint(0, self.size, size=batch_size)

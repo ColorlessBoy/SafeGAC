@@ -38,6 +38,7 @@ def get_args():
     parser.add_argument('--load-fold', type=str, default='tmp', help='load data and model from this fold')
     parser.add_argument('--render', action='store_true', help='enable env.render()')
     parser.add_argument('--warmup_steps', type=int, default=10000, help='warm up for replay buffer')
+    parser.add_argument('--advice', type=float, default=1.0, help='hyperparameter for weighted cost value')
 
     args = parser.parse_args()
 

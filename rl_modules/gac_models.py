@@ -8,10 +8,9 @@ class actor(nn.Module):
     def __init__(self, env_params):
         super(actor, self).__init__()
         self.epsilon_dim = env_params['action']
-        self.fc1 = nn.Linear(env_params['obs'] + self.epsilon_dim, 256)
-        self.fc2 = nn.Linear(256, 256)
-        self.fc3 = nn.Linear(256, 256)
-        self.action_out = nn.Linear(256, env_params['action'])
+        self.fc1 = nn.Linear(env_params['obs'] + self.epsilon_dim, 400)
+        self.fc2 = nn.Linear(400, 300)
+        self.action_out = nn.Linear(300, env_params['action'])
 
     def forward(self, x, std=1.0, epsilon_limit=5.0):
         epsilon = (std * torch.randn(x.shape[0], self.epsilon_dim, 
@@ -19,7 +18,6 @@ class actor(nn.Module):
         x = torch.cat([x, epsilon], dim=1)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
-        x = F.relu(self.fc3(x))
         actions = torch.tanh(self.action_out(x))
 
         return actions
@@ -27,16 +25,14 @@ class actor(nn.Module):
 class critic(nn.Module):
     def __init__(self, env_params):
         super(critic, self).__init__()
-        self.fc1 = nn.Linear(env_params['obs'] + env_params['action'], 256)
-        self.fc2 = nn.Linear(256, 256)
-        self.fc3 = nn.Linear(256, 256)
-        self.q_out = nn.Linear(256, 1)
+        self.fc1 = nn.Linear(env_params['obs'] + env_params['action'], 400)
+        self.fc2 = nn.Linear(400, 300)
+        self.q_out = nn.Linear(300, 1)
 
     def forward(self, x, actions):
         x = torch.cat([x, actions], dim=1)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
-        x = F.relu(self.fc3(x))
         q_value = self.q_out(x)
 
         return q_value

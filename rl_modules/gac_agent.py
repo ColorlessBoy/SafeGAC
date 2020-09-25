@@ -44,18 +44,26 @@ class gac_agent:
         self.actor_network = actor(env_params)
         self.critic_network1 = critic(env_params)
         self.critic_network2 = critic(env_params)
+        self.advice_network1 = critic(env_params)
+        self.advice_network2 = critic(env_params)
         # sync the networks across the cpus
         sync_networks(self.actor_network)
         sync_networks(self.critic_network1)
         sync_networks(self.critic_network2)
+        sync_networks(self.advice_network1)
+        sync_networks(self.advice_network2)
         # build up the target network
         # self.actor_target_network = actor(env_params)
         self.critic_target_network1 = critic(env_params)
         self.critic_target_network2 = critic(env_params)
+        self.advice_target_network1 = critic(env_params)
+        self.advice_target_network2 = critic(env_params)
         # load the weights into the target networks
         # self.actor_target_network.load_state_dict(self.actor_network.state_dict())
         self.critic_target_network1.load_state_dict(self.critic_network1.state_dict())
         self.critic_target_network2.load_state_dict(self.critic_network2.state_dict())
+        self.advice_target_network1.load_state_dict(self.advice_network1.state_dict())
+        self.advice_target_network2.load_state_dict(self.advice_network2.state_dict())
 
         # if use gpu
         self.rank = MPI.COMM_WORLD.Get_rank()
@@ -72,10 +80,17 @@ class gac_agent:
             self.critic_target_network1.cuda(self.device)
             self.critic_target_network2.cuda(self.device)
 
+            self.advice_network1.cuda(self.device)
+            self.advice_network2.cuda(self.device)
+            self.advice_target_network1.cuda(self.device)
+            self.advice_target_network2.cuda(self.device)
+
         # create the optimizer
         self.actor_optim = torch.optim.Adam(self.actor_network.parameters(), lr=self.args.lr_actor)
         self.critic_optim1 = torch.optim.Adam(self.critic_network1.parameters(), lr=self.args.lr_critic)
         self.critic_optim2 = torch.optim.Adam(self.critic_network2.parameters(), lr=self.args.lr_critic)
+        self.advice_optim1 = torch.optim.Adam(self.advice_network1.parameters(), lr=self.args.lr_critic)
+        self.advice_optim2 = torch.optim.Adam(self.advice_network2.parameters(), lr=self.args.lr_critic)
 
         # create the replay buffer
         self.buffer = ReplayBuffer(self.env_params['obs'], self.env_params['action'], self.args.buffer_size)
@@ -187,17 +202,31 @@ class gac_agent:
             q_next_value2 = self.critic_target_network2(o2, a2).detach()
             target_q_value = r + self.args.gamma * (1 - d) * torch.min(q_next_value1, q_next_value2)
             target_q_value = target_q_value.detach()
+
+            p_next_value1 = self.advice_target_network1(o2, a2).detach()
+            p_next_value2 = self.advice_target_network2(o2, a2).detach()
+            target_p_value = -c + self.args.gamma * (1 - d) * torch.min(p_next_value1, p_next_value2)
+            target_p_value = target_p_value.detach()
+
         # the q loss
         real_q_value1 = self.critic_network1(o, a)
         real_q_value2 = self.critic_network2(o, a)
         critic_loss1 = (target_q_value - real_q_value1).pow(2).mean()
         critic_loss2 = (target_q_value - real_q_value2).pow(2).mean()
 
+        # the p loss
+        real_p_value1 = self.advice_network1(o, a)
+        real_p_value2 = self.advice_network2(o, a)
+        advice_loss1 = (target_p_value - real_p_value1).pow(2).mean()
+        advice_loss2 = (target_p_value - real_p_value2).pow(2).mean()
+
         # the actor loss
         o_exp = o.repeat(self.args.expand_batch, 1)
         a_exp = self.actor_network(o_exp)
         actor_loss = -torch.min(self.critic_network1(o_exp, a_exp),
                     self.critic_network2(o_exp, a_exp)).mean()
+        actor_loss -= self.args.advice * torch.min(self.advice_network1(o_exp, a_exp),
+                    self.advice_network2(o_exp, a_exp)).mean()
 
         mmd_entropy = torch.tensor(0.0)
 
