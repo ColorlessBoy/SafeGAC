@@ -46,10 +46,8 @@ class Test:
         data = joblib.load(data_file)
 
         ## load obs_mean obs_std g_mean g_std
-        self.obs_mean = data['o_norm']['mean']
-        self.obs_std  = data['o_norm']['std']
-        self.g_mean   = data['g_norm']['mean']
-        self.g_std    = data['g_norm']['std']
+        self.obs_mean = data['observation_mean']
+        self.obs_std  = data['observation_std']
 
         ## load policy model
         model = {
@@ -64,34 +62,29 @@ class Test:
 
     def run(self):
         self._eval_agent()
-        self.logger.log_tabular('SuccessRate')
+        self.logger.log_tabular('EpReward')
+        self.logger.log_tabular('EpCost')
         self.logger.dump_tabular()
 
-    def _preproc_inputs(self, obs, g):
+    def _preproc_inputs(self, obs):
         obs_norm = np.clip((obs-self.obs_mean)/self.obs_std, 
                             -self.args.clip_range, self.args.clip_range)
-        g_norm = np.clip((g-self.g_mean)/self.g_std,
-                            -self.args.clip_range, self.args.clip_range)
         # concatenate the stuffs
-        inputs = np.concatenate([obs_norm, g_norm])
-        inputs = torch.tensor(inputs, dtype=torch.float32).unsqueeze(0)
+        inputs = torch.tensor(obs_norm, dtype=torch.float32).unsqueeze(0)
         if self.args.cuda:
             inputs = inputs.cuda(self.device)
         return inputs
 
     def _eval_agent(self):
         for _ in range(self.args.n_test_rollouts):
-            per_success_rate = []
-            observation = self.env.reset()
-            obs = observation['observation']
-            g = observation['desired_goal']
+            obs, ep_reward, ep_cost = self.env.reset(), 0, 0
             for _ in range(self.env_params['max_timesteps']):
                 if self.args.render:
                     self.env.render()
                     time.sleep(1e-3)
 
                 with torch.no_grad():
-                    input_tensor = self._preproc_inputs(obs, g)
+                    input_tensor = self._preproc_inputs(obs)
                     if self.args.alg == 'gac':
                         pi = self.actor_network(input_tensor, std=0.5)
                     elif self.args.alg == 'sac':
@@ -100,11 +93,10 @@ class Test:
                         pi = self.actor_network(input_tensor)
                     # convert the actions
                     actions = pi.detach().cpu().numpy().squeeze()
-                observation_new, _, _, info = self.env.step(actions)
-                obs = observation_new['observation']
-                g = observation_new['desired_goal']
-                per_success_rate.append(info['is_success'])
-                self.logger.store(SuccessRate=per_success_rate[-1])
+                obs, reward, cost, info = self.env.step(actions)
+                ep_reward += reward
+                ep_cost += cost
+                self.logger.store(EpReward=ep_reward, EpCost=ep_cost)
 
 if __name__ == '__main__':
 #    from pyvirtualdisplay import Display
