@@ -7,7 +7,7 @@ import torch.nn.functional as F
 class actor(nn.Module):
     def __init__(self, env_params):
         super(actor, self).__init__()
-        self.epsilon_dim = env_params['action']
+        self.epsilon_dim = env_params['obs']
         self.fc1 = nn.Linear(env_params['obs'] + self.epsilon_dim, 256)
         self.fc2 = nn.Linear(256, 256)
         self.fc3 = nn.Linear(256, 256)
